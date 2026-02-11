@@ -1,0 +1,28 @@
+[
+    {
+        "_comment": "Tunnel Configuration File - See README.md for detailed field descriptions",
+        "index": "0",
+        "host_name": "server1",
+        "ssh_port": "22",
+        "ipv4": "192.168.1.100",
+        "local_bind": "0.0.0.0",
+        "local_port": "8080",
+        "remote_bind": "localhost",
+        "remote_port": "80",
+        "preferred": "v4",
+        "ipv6": ""
+    },
+    {
+        "_comment": "Second tunnel example",
+        "index": "1",
+        "host_name": "server2",
+        "ssh_port": "2222",
+        "ipv4": "192.168.1.101",
+        "local_bind": "127.0.0.1",
+        "local_port": "3306",
+        "remote_bind": "localhost",
+        "remote_port": "3306",
+        "preferred": "v4",
+        "ipv6": "2001:db8::1"
+    }
+]

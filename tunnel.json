@@ -1,0 +1,26 @@
+[
+    {
+        "index": "INDEX_1",
+        "host_name": "HOST_NAME_1",
+        "ssh_port": "SSH_PORT_1",
+        "ipv4": "IPV4_1",
+        "local_bind": "0.0.0.0",
+        "local_port": "LOCAL_PORT_1",
+        "remote_bind": "localhost",
+        "remote_port": "REMOTE_PORT_1",
+        "preferred": "v4",
+        "ipv6": "IPV6_1"
+    },
+    {
+        "index": "INDEX_2",
+        "host_name": "HOST_NAME_2",
+        "ssh_port": "SSH_PORT_2",
+        "ipv4": "IPV4_2",
+        "local_bind": "0.0.0.0",
+        "local_port": "LOCAL_PORT_2",
+        "remote_bind": "localhost",
+        "remote_port": "REMOTE_PORT_2",
+        "preferred": "v4",
+        "ipv6": "IPV6_2"
+    }
+]
