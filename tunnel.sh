@@ -47,25 +47,54 @@ create_remote_script()
 	cat > /tmp/remote-${INDEX}.sh << EOF
 #!/bin/bash
 PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+# Remote script log file
+REMOTE_LOG="/tmp/remote-${INDEX}.log"
+echo "\$(date +%F-%T) -- Remote script started for tunnel ${INDEX}" | tee -a \$REMOTE_LOG
 # Wait for TUN interface to be fully created by SSH
 sleep 2
+# Check if TUN interface exists
+if ! ip link show tun${INDEX} &> /dev/null; then
+	echo "\$(date +%F-%T) -- ERROR: TUN interface tun${INDEX} not found!" | tee -a \$REMOTE_LOG
+	exit 1
+fi
+echo "\$(date +%F-%T) -- TUN interface tun${INDEX} found" | tee -a \$REMOTE_LOG
 # Assign IP address to the TUN interface on remote side
 # Uses 10.1.1.x/30 subnet (point-to-point, 4 addresses per tunnel)
-ip a a 10.1.1.$TUNREMOTE/30 dev tun${INDEX}
+if ip a a 10.1.1.$TUNREMOTE/30 dev tun${INDEX} 2>&1 | tee -a \$REMOTE_LOG; then
+	echo "\$(date +%F-%T) -- IP address assigned to tun${INDEX}" | tee -a \$REMOTE_LOG
+else
+	echo "\$(date +%F-%T) -- WARNING: Failed to assign IP address (may already exist)" | tee -a \$REMOTE_LOG
+fi
 # Bring the TUN interface up
-ip l s up dev tun${INDEX}
+if ip l s up dev tun${INDEX} 2>&1 | tee -a \$REMOTE_LOG; then
+	echo "\$(date +%F-%T) -- TUN interface tun${INDEX} brought up" | tee -a \$REMOTE_LOG
+else
+	echo "\$(date +%F-%T) -- ERROR: Failed to bring up tun${INDEX}" | tee -a \$REMOTE_LOG
+	exit 1
+fi
 # Enable IP forwarding on the remote server
 echo 1 > /proc/sys/net/ipv4/ip_forward
-# Flush existing NAT rules
-iptables -t nat -F
+echo "\$(date +%F-%T) -- IP forwarding enabled" | tee -a \$REMOTE_LOG
+# Flush existing NAT rules (optional - comment out if you want to preserve existing rules)
+# iptables -t nat -F
 # Set up NAT masquerading for traffic from 10.10.0.0/16 network
 # This allows clients in that network to access internet through the tunnel
-iptables -t nat -A POSTROUTING -s 10.10.0.0/16 -j MASQUERADE
+if iptables -t nat -C POSTROUTING -s 10.10.0.0/16 -j MASQUERADE &> /dev/null; then
+	echo "\$(date +%F-%T) -- NAT masquerade rule already exists" | tee -a \$REMOTE_LOG
+else
+	if iptables -t nat -A POSTROUTING -s 10.10.0.0/16 -j MASQUERADE 2>&1 | tee -a \$REMOTE_LOG; then
+		echo "\$(date +%F-%T) -- NAT masquerade rule added" | tee -a \$REMOTE_LOG
+	else
+		echo "\$(date +%F-%T) -- WARNING: Failed to add NAT masquerade rule" | tee -a \$REMOTE_LOG
+	fi
+fi
 # Alternative per-tunnel NAT rules (commented out, can be enabled if needed)
 #iptables -t nat -A POSTROUTING -s 10.10.${INDEX}.0/24 -j MASQUERADE
 #ip route add 10.10.${INDEX}.0/24 via 10.1.1.$TUNLOCAL
+echo "\$(date +%F-%T) -- Remote script configuration complete, starting keepalive ping" | tee -a \$REMOTE_LOG
 # Keep connection alive with continuous ping (prevents timeout)
-ping 8.8.8.8
+# Use -i 30 to ping every 30 seconds instead of every second
+ping -i 30 8.8.8.8
 EOF
 }
 
@@ -95,8 +124,10 @@ while :; do
 	# Log connection attempt with timestamp
 	echo "\$(date +%F-%T) -- Starting SSH Tunnel ${INDEX}" | tee -a $LOG
 	echo "\$(date +%F-%T) -- Port Forward: $LBIND:$LPORT -> $RBIND:$RPORT" | tee -a $LOG
+	echo "\$(date +%F-%T) -- Connecting to: root@$SERVER:$SSHPORT" | tee -a $LOG
 	# Establish SSH connection with the following options:
 	# Use brackets for IPv6 addresses in SSH command
+	# Redirect both stdout and stderr to log file to capture verbose SSH output
 	if [[ "$SERVER" =~ : ]]; then
 		# IPv6 address - use brackets
 		ssh -v \\
@@ -109,7 +140,7 @@ while :; do
 			-w $INDEX:$INDEX			\\  # Create TUN interface (local:remote device number)
 			-L $LBIND:$LPORT:$RBIND:$RPORT		\\  # Local port forwarding (bind:port -> remote_bind:remote_port)
 			-i $SSHKEY -p $SSHPORT root@[$SERVER]	\\  # SSH key, port, and server address (IPv6 with brackets)
-			/tmp/remote-${INDEX}.sh			# Execute remote script after connection
+			/tmp/remote-${INDEX}.sh 2>&1 | tee -a $LOG
 	else
 		# IPv4 address - no brackets
 		ssh -v \\
@@ -122,10 +153,11 @@ while :; do
 			-w $INDEX:$INDEX			\\  # Create TUN interface (local:remote device number)
 			-L $LBIND:$LPORT:$RBIND:$RPORT		\\  # Local port forwarding (bind:port -> remote_bind:remote_port)
 			-i $SSHKEY -p $SSHPORT root@$SERVER	\\  # SSH key, port, and server address (IPv4 without brackets)
-			/tmp/remote-${INDEX}.sh			# Execute remote script after connection
+			/tmp/remote-${INDEX}.sh 2>&1 | tee -a $LOG
 	fi
-	# Log disconnection
-	echo "\$(date +%F-%T) -- SSH Tunnel ${INDEX} disconnected, reconnecting..." | tee -a $LOG
+	# Log disconnection (this will only execute if SSH command exits)
+	EXIT_CODE=\${PIPESTATUS[0]}
+	echo "\$(date +%F-%T) -- SSH Tunnel ${INDEX} disconnected (exit code: \$EXIT_CODE), reconnecting..." | tee -a $LOG
 	# Wait 1 second before attempting reconnection
 	sleep 1
 done
