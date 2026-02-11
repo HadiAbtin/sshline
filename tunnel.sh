@@ -94,18 +94,38 @@ PATH="/usr/sbin:/usr/bin:/sbin:/bin"
 while :; do
 	# Log connection attempt with timestamp
 	echo "\$(date +%F-%T) -- Starting SSH Tunnel ${INDEX}" | tee -a $LOG
+	echo "\$(date +%F-%T) -- Port Forward: $LBIND:$LPORT -> $RBIND:$RPORT" | tee -a $LOG
 	# Establish SSH connection with the following options:
-	ssh -v \\
-		-o "ServerAliveInterval 10"		\\  # Send keepalive every 10 seconds
-		-o "ServerAliveCountMax 3"		\\  # Max 3 failed keepalives before disconnect
-		-o "CheckHostIP no"			\\  # Don't check host IP in known_hosts
-		-o "StrictHostKeyChecking no"		\\  # Don't prompt for unknown host keys
-		-o "UpdateHostKeys yes" 		\\  # Update known_hosts automatically
-		-o "VerifyHostKeyDNS no"		\\  # Don't verify host keys via DNS
-		-w $INDEX:$INDEX			\\  # Create TUN interface (local:remote device number)
-		-L $LBIND:$LPORT:$RBIND:$RPORT		\\  # Local port forwarding (bind:port -> remote_bind:remote_port)
-		-i $SSHKEY -p $SSHPORT root@$SERVER	\\  # SSH key, port, and server address
-		/tmp/remote-${INDEX}.sh			# Execute remote script after connection
+	# Use brackets for IPv6 addresses in SSH command
+	if [[ "$SERVER" =~ : ]]; then
+		# IPv6 address - use brackets
+		ssh -v \\
+			-o "ServerAliveInterval 10"		\\  # Send keepalive every 10 seconds
+			-o "ServerAliveCountMax 3"		\\  # Max 3 failed keepalives before disconnect
+			-o "CheckHostIP no"			\\  # Don't check host IP in known_hosts
+			-o "StrictHostKeyChecking no"		\\  # Don't prompt for unknown host keys
+			-o "UpdateHostKeys yes" 		\\  # Update known_hosts automatically
+			-o "VerifyHostKeyDNS no"		\\  # Don't verify host keys via DNS
+			-w $INDEX:$INDEX			\\  # Create TUN interface (local:remote device number)
+			-L $LBIND:$LPORT:$RBIND:$RPORT		\\  # Local port forwarding (bind:port -> remote_bind:remote_port)
+			-i $SSHKEY -p $SSHPORT root@[$SERVER]	\\  # SSH key, port, and server address (IPv6 with brackets)
+			/tmp/remote-${INDEX}.sh			# Execute remote script after connection
+	else
+		# IPv4 address - no brackets
+		ssh -v \\
+			-o "ServerAliveInterval 10"		\\  # Send keepalive every 10 seconds
+			-o "ServerAliveCountMax 3"		\\  # Max 3 failed keepalives before disconnect
+			-o "CheckHostIP no"			\\  # Don't check host IP in known_hosts
+			-o "StrictHostKeyChecking no"		\\  # Don't prompt for unknown host keys
+			-o "UpdateHostKeys yes" 		\\  # Update known_hosts automatically
+			-o "VerifyHostKeyDNS no"		\\  # Don't verify host keys via DNS
+			-w $INDEX:$INDEX			\\  # Create TUN interface (local:remote device number)
+			-L $LBIND:$LPORT:$RBIND:$RPORT		\\  # Local port forwarding (bind:port -> remote_bind:remote_port)
+			-i $SSHKEY -p $SSHPORT root@$SERVER	\\  # SSH key, port, and server address (IPv4 without brackets)
+			/tmp/remote-${INDEX}.sh			# Execute remote script after connection
+	fi
+	# Log disconnection
+	echo "\$(date +%F-%T) -- SSH Tunnel ${INDEX} disconnected, reconnecting..." | tee -a $LOG
 	# Wait 1 second before attempting reconnection
 	sleep 1
 done
@@ -376,8 +396,16 @@ for I in $(seq 0 $N); do
 
 	# Copy remote script to the server via SCP
 	# The script will be executed after SSH tunnel is established
-	scp -P$SSHPORT -i $SSHKEY \
-		/tmp/remote-${INDEX}.sh root@[$SERVER]:/tmp/ &> /dev/null
+	# Use brackets for IPv6, no brackets for IPv4
+	if [[ "$SERVER" =~ : ]]; then
+		# IPv6 address - use brackets
+		scp -P$SSHPORT -i $SSHKEY \
+			/tmp/remote-${INDEX}.sh root@[$SERVER]:/tmp/ &> /dev/null
+	else
+		# IPv4 address - no brackets
+		scp -P$SSHPORT -i $SSHKEY \
+			/tmp/remote-${INDEX}.sh root@$SERVER:/tmp/ &> /dev/null
+	fi
 
 	# Stop any existing screen session for this tunnel (if it exists)
 	# This prevents duplicate tunnels with the same index
